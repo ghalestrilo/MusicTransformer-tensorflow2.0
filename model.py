@@ -506,6 +506,17 @@ class MusicTransformerDecoder(keras.Model):
         # x = data.add_noise(x, rate=0.01)
         return x, y
 
+    ## @ghalestrilo
+
+    def realtime_setup(self,state):
+      self.server_state = state
+      pass
+    
+    def tick(self):
+      prior = self.server_state['history'][0]
+      seq = self.generate(prior, length=self.server_state['buffer_length'])
+      print('tick: {}'.format(seq))
+
 
 if __name__ == '__main__':
     # import utils
