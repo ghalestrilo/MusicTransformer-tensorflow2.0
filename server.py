@@ -13,11 +13,11 @@ import params as par
 import pprint
 
 from threading import Thread, Event
-from pythonosc import dispatcher, osc_server
+from pythonosc import dispatcher, osc_server, udp_client
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
+1
 # TODO: Move to engine.py
 state = {
     'is_running': False,
@@ -25,8 +25,10 @@ state = {
     'temperature': 1.2,
     'tick_interval': 0.25,
     'buffer_length': 8,
+    'playback': True,
     'model': None,
-    'debug_output': True
+    'scclient': None,
+    'debug_output': True,
 }
 
 # Clock implements the main loop
@@ -41,8 +43,7 @@ class Clock(Thread):
         if (state['is_running'] == True):
           # seq = model.tick()
           state['history'][0] = model.tick()[-128:]
-          # print('tick: {}'.format(seq))
-          # history = list([list(h[-16:]) for h in history])
+
           if (state['debug_output']):
             print('history: {}'.format([model.decode(h) for h in state['history'][0]]))
 
@@ -92,12 +93,13 @@ def sample_model(unused_addr, args):
     event = model.predict()
     print(event)
 
-
 def prepare_model(unused_addr, args):
     model = args[0]
     event = model.realtime_setup(state)
     print(event)
 
+def play(note):
+    state['scclient'].send_message('/play2', ['s', 'superpiano', 'note', note])
 
 def bind_dispatcher(dispatcher, model):
     state['model'] = model
@@ -112,6 +114,9 @@ def bind_dispatcher(dispatcher, model):
     if (model):
         dispatcher.map("/sample", sample_model, model)
         dispatcher.map("/prep",   prepare_model, model)
+    
+    if (state['playback'] == True):
+      dispatcher.map("/play", lambda _,note: play(note))
 
 
 def load_model():
@@ -138,8 +143,15 @@ if __name__ == "__main__":
                         default="127.0.0.1", help="The ip to listen on")
     parser.add_argument("--port",
                         type=int, default=5005, help="The port to listen on")
+
+    parser.add_argument("--playback", type=bool, default=True, help="Use supercollider for sound playback")
+    parser.add_argument("--sc-ip",    default="127.0.0.1", help="The supercollider server ip")
+    parser.add_argument("--sc-port",  type=int, default=57120, help="The supercollider server ip")
+
     args = parser.parse_args()
 
+    state['playback'] = args.playback
+    state['scclient'] = udp_client.SimpleUDPClient(args.sc_ip, args.sc_port)
     state['max_seq'] = args.max_seq
     state['history'] = [[int(x) for x in str(args.state).split(',')]]
 
