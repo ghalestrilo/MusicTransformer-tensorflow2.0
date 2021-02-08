@@ -16,19 +16,6 @@ from pythonosc import dispatcher
 from pythonosc import osc_server
 
 
-# Command-Line Arguments
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--max_seq', default=2048, help='최대 길이', type=int)
-parser.add_argument('--state', default="0",
-                    help='the initial state of the improv', type=str)
-
-args = parser.parse_args()
-
-max_seq = args.max_seq
-history = [int(x) for x in str(args.state).split(',')]
-
-
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
@@ -36,10 +23,11 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 state = {
     'isRunning': False,
-    'history': [history],
+    'history': [],
     'temperature': 1.2,
     'tickInterval': 0.25,
-    'buffer_length': 16,
+    'buffer_length': 8,
+    'max_lookback': 16,
     'model': None
 }
 
@@ -51,11 +39,15 @@ class Clock(Thread):
         self.stopped = event
 
     def run(self):
+        model = state['model']
+        history = state['history'][0]
         while not self.stopped.wait(state['tickInterval']):
             if (state['isRunning'] == True):
-                # print("tick")
-                # sample_model(None,[state['model']])
-                state['model'].tick()
+                # seq = model.tick()
+                history = model.tick()
+                # print('tick: {}'.format(seq))
+                # history = list([list(h[-16:]) for h in history])
+                print('history: {}'.format(history))
 
 
 def start_timer():
@@ -68,18 +60,6 @@ def start_timer():
 def stop_timer():
     # this will stop the timer
     state['stopFlag'].set()
-
-
-def print_volume_handler(unused_addr, args, volume):
-    print("[{0}] ~ {1}".format(args[0], volume))
-
-
-def print_compute_handler(unused_addr, args, volume):
-    try:
-        print("[{0}] ~ {1}".format(args[0], args[1](volume)))
-    except ValueError:
-        pass
-
 
 def engine_set(unused_addr, args):
     try:
@@ -138,7 +118,7 @@ def load_model():
     return MusicTransformerDecoder(
         embedding_dim=256, vocab_size=par.vocab_size,
         num_layer=6,
-        max_seq=max_seq,
+        max_seq=state['max_seq'],
         dropout=0.1,
         debug=False)
 
@@ -148,11 +128,18 @@ def load_model():
 # Main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--max_seq', default=2048, help='최대 길이', type=int)
+    parser.add_argument('--state', default="0",
+                    help='the initial state of the improv', type=str)
+
     parser.add_argument("--ip",
                         default="127.0.0.1", help="The ip to listen on")
     parser.add_argument("--port",
                         type=int, default=5005, help="The port to listen on")
     args = parser.parse_args()
+
+    state['max_seq'] = args.max_seq
+    state['history'] = [[int(x) for x in str(args.state).split(',')]]
 
     model = load_model()
     prepare_model(None, [model])  # for real time use

@@ -208,6 +208,7 @@ class MusicTransformer(keras.Model):
         else:
             decode_array = tf.constant([decode_array])
             for i in Bar('generating').iter(range(min(self.max_seq, length))):
+            # for i in range(min(self.max_seq, length)):
                 # if i % 100 == 0:
                 #     print('generating... {}% completed'.format((i/min(self.max_seq, length))*100))
                 enc_mask, tar_mask, look_ahead_mask = \
@@ -282,6 +283,9 @@ class MusicTransformerDecoder(keras.Model):
 
         if loader_path is not None:
             self.load_ckpt_file(loader_path)
+
+        self.realtime_ready = False
+        self.server_state = dict({})
 
     def call(self, inputs, training=None, eval=None, lookup_mask=None):
         decoder, w = self.Decoder(inputs, training=training, mask=lookup_mask)
@@ -509,13 +513,14 @@ class MusicTransformerDecoder(keras.Model):
     ## @ghalestrilo
 
     def realtime_setup(self,state):
+      if (self.realtime_ready == True):
+          return
       self.server_state = state
-      pass
     
     def tick(self):
-      prior = self.server_state['history'][0]
-      seq = self.generate(prior, length=self.server_state['buffer_length'])
-      print('tick: {}'.format(seq))
+      prior = self.server_state['history'][0][-16:]
+      buffer_length = self.server_state['buffer_length']
+      return self.generate(prior, length=buffer_length)
 
 
 if __name__ == '__main__':
