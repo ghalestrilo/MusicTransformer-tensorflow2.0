@@ -1,4 +1,8 @@
 import os
+import sys
+
+sys.path.append(os.path.join(sys.path[0],'MusicTransformer-tensorflow2.0'))
+
 from model import MusicTransformerDecoder
 import tensorflow as tf
 import numpy as np
@@ -14,6 +18,9 @@ import pprint
 
 from threading import Thread, Event
 from pythonosc import dispatcher, osc_server, udp_client
+
+
+# sys.path.append(os.path.join(sys.path[0],'bar','sub','dir'))
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
