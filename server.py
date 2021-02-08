@@ -1,26 +1,18 @@
 import os
 import sys
 
-sys.path.append(os.path.join(sys.path[0],'MusicTransformer-tensorflow2.0'))
-
-from model import MusicTransformerDecoder
 import tensorflow as tf
 import numpy as np
 import miditoolkit
 #import modules
 import pickle
-import utils
 import time
 import argparse
 import math
-import params as par
 import pprint
 
 from threading import Thread, Event
 from pythonosc import dispatcher, osc_server, udp_client
-
-
-# sys.path.append(os.path.join(sys.path[0],'bar','sub','dir'))
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -33,6 +25,7 @@ state = {
     'tick_interval': 0.25,
     'buffer_length': 8,
     'playback': True,
+    'model_name': None,
     'model': None,
     'scclient': None,
     'debug_output': True,
@@ -125,14 +118,22 @@ def bind_dispatcher(dispatcher, model):
     if (state['playback'] == True):
       dispatcher.map("/play", lambda _,note: play(note))
 
+def load_folder(name):
+  sys.path.append(os.path.join(sys.path[0], name))
 
 def load_model():
+  if state['model_name'] == 'music-transformer':
+    load_folder('MusicTransformer-tensorflow2.0')
+    from model import MusicTransformerDecoder
+    import params as par
     return MusicTransformerDecoder(
         embedding_dim=256, vocab_size=par.vocab_size,
         num_layer=6,
         max_seq=state['max_seq'],
         dropout=0.1,
         debug=False)
+  print("Unkown model: " + str(state['model_name'] + ". Aborting load..."))
+  exit(-1)
 
 # /TODO: Move to engine.py
 
@@ -142,21 +143,21 @@ if __name__ == "__main__":
     
     # Parse CLI Args
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--max_seq', default=256, help='최대 길이', type=int)
-    parser.add_argument('--state', default="0",
-                    help='the initial state of the improv', type=str)
 
-    parser.add_argument("--ip",
-                        default="127.0.0.1", help="The ip to listen on")
-    parser.add_argument("--port",
-                        type=int, default=5005, help="The port to listen on")
+    parser.add_argument('--state', default="0", help='the initial state of the improv', type=str)
+    parser.add_argument("--ip", default="127.0.0.1", help="The ip to listen on")
+    parser.add_argument("--port", type=int, default=5005, help="The port to listen on")
 
-    parser.add_argument("--playback", type=bool, default=True, help="Use supercollider for sound playback")
-    parser.add_argument("--sc-ip",    default="127.0.0.1", help="The supercollider server ip")
-    parser.add_argument("--sc-port",  type=int, default=57120, help="The supercollider server ip")
+    parser.add_argument("--model_name", type=str,  default="music-transformer", help="The model to use (music-transformer, remi)")
+    parser.add_argument("--playback",   type=bool, default=True, help="Use supercollider for sound playback")
+    parser.add_argument("--sc-ip",      type=str,  default="127.0.0.1", help="The supercollider server ip")
+    parser.add_argument("--sc-port",    type=int,  default=57120, help="The supercollider server ip")
 
     args = parser.parse_args()
 
+    state['model_name'] = args.model_name
     state['playback'] = args.playback
     state['scclient'] = udp_client.SimpleUDPClient(args.sc_ip, args.sc_port)
     state['max_seq'] = args.max_seq
@@ -173,7 +174,7 @@ if __name__ == "__main__":
 
     # Start Server
     server = osc_server.ThreadingOSCUDPServer((args.ip, args.port), dispatcher)
-    print("Serving on {}".format(server.server_address))
+    print("Serving {} on {}".format(state['model_name'], server.server_address))
     start_timer()
     server.serve_forever()
     stop_timer()
