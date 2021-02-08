@@ -10,44 +10,41 @@ import time
 import argparse
 import math
 import params as par
+import pprint
 
 from threading import Thread, Event
-from pythonosc import dispatcher
-from pythonosc import osc_server
+from pythonosc import dispatcher, osc_server
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-
 # TODO: Move to engine.py
-
 state = {
-    'isRunning': False,
+    'is_running': False,
     'history': [],
     'temperature': 1.2,
-    'tickInterval': 0.25,
+    'tick_interval': 0.25,
     'buffer_length': 8,
-    'max_lookback': 16,
-    'model': None
+    'model': None,
+    'debug_output': True
 }
-
 
 # Clock implements the main loop
 class Clock(Thread):
     def __init__(self, event):
-        Thread.__init__(self)
-        self.stopped = event
+      Thread.__init__(self)
+      self.stopped = event
 
     def run(self):
-        model = state['model']
-        history = state['history'][0]
-        while not self.stopped.wait(state['tickInterval']):
-            if (state['isRunning'] == True):
-                # seq = model.tick()
-                history = model.tick()
-                # print('tick: {}'.format(seq))
-                # history = list([list(h[-16:]) for h in history])
-                print('history: {}'.format(history))
+      model = state['model']
+      while not self.stopped.wait(state['tick_interval']):
+        if (state['is_running'] == True):
+          # seq = model.tick()
+          state['history'][0] = model.tick()[-128:]
+          # print('tick: {}'.format(seq))
+          # history = list([list(h[-16:]) for h in history])
+          if (state['debug_output']):
+            print('history: {}'.format([model.decode(h) for h in state['history'][0]]))
 
 
 def start_timer():
@@ -76,8 +73,11 @@ def push_event(unused_addr, event):
     state['history'][0].append(event)
 
 
-def engine_print(unused_addr, args):
+def engine_print(unused_addr, args=None):
     field = args
+    if (args == None):
+      pprint.pprint(state)
+      return
     try:
         # data = [state['model'].word2event[word] for word in state[field][0]] if field == 'history' else state[field]
         data = state[field]
@@ -101,8 +101,8 @@ def prepare_model(unused_addr, args):
 
 def bind_dispatcher(dispatcher, model):
     state['model'] = model
-    dispatcher.map("/start", engine_set, 'isRunning', True)
-    dispatcher.map("/pause", engine_set, 'isRunning', False)
+    dispatcher.map("/start", engine_set, 'is_running', True)
+    dispatcher.map("/pause", engine_set, 'is_running', False)
     dispatcher.map("/reset", lambda _: state['history'].clear())
     dispatcher.map("/debug", engine_print)
     dispatcher.map("/event", push_event)  # event2word
@@ -127,8 +127,10 @@ def load_model():
 
 # Main
 if __name__ == "__main__":
+    
+    # Parse CLI Args
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max_seq', default=2048, help='최대 길이', type=int)
+    parser.add_argument('--max_seq', default=256, help='최대 길이', type=int)
     parser.add_argument('--state', default="0",
                     help='the initial state of the improv', type=str)
 
@@ -141,12 +143,16 @@ if __name__ == "__main__":
     state['max_seq'] = args.max_seq
     state['history'] = [[int(x) for x in str(args.state).split(',')]]
 
+
+    # Prep Model
     model = load_model()
     prepare_model(None, [model])  # for real time use
 
+    # Prep Server
     dispatcher = dispatcher.Dispatcher()
     bind_dispatcher(dispatcher, model)
 
+    # Start Server
     server = osc_server.ThreadingOSCUDPServer((args.ip, args.port), dispatcher)
     print("Serving on {}".format(server.server_address))
     start_timer()

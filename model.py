@@ -8,8 +8,9 @@ import tensorflow_probability as tfp
 import random
 import utils
 from progress.bar import Bar
-tf.executing_eagerly()
+from midi_processor.processor import Event
 
+tf.executing_eagerly()
 
 class MusicTransformer(keras.Model):
     def __init__(self, embedding_dim=256, vocab_size=388+2, num_layer=6,
@@ -181,8 +182,8 @@ class MusicTransformer(keras.Model):
             decode_array = tf.constant([decode_array])
 
             for i in range(min(self.max_seq, length)):
-                if i % 100 == 0:
-                    print('generating... {}% completed'.format((i/min(self.max_seq, length))*100))
+                # if i % 100 == 0:
+                    # print('generating... {}% completed'.format((i/min(self.max_seq, length))*100))
                 enc_mask, tar_mask, look_ahead_mask = \
                     utils.get_masked_with_pad_tensor(decode_array.shape[1], prior, decode_array)
 
@@ -207,8 +208,8 @@ class MusicTransformer(keras.Model):
             decode_array = decode_array[0]
         else:
             decode_array = tf.constant([decode_array])
-            for i in Bar('generating').iter(range(min(self.max_seq, length))):
-            # for i in range(min(self.max_seq, length)):
+            # for i in Bar('generating').iter(range(min(self.max_seq, length))):
+            for i in range(min(self.max_seq, length)):
                 # if i % 100 == 0:
                 #     print('generating... {}% completed'.format((i/min(self.max_seq, length))*100))
                 enc_mask, tar_mask, look_ahead_mask = \
@@ -448,7 +449,8 @@ class MusicTransformerDecoder(keras.Model):
             decode_array = decode_array[0]
 
         else:
-            for i in Bar('generating').iter(range(min(self.max_seq, length))):
+            # for i in Bar('generating').iter(range(min(self.max_seq, length))):
+            for i in range(min(self.max_seq, length)):
                 # print(decode_array.shape[1])
                 if decode_array.shape[1] >= self.max_seq:
                     break
@@ -518,9 +520,19 @@ class MusicTransformerDecoder(keras.Model):
       self.server_state = state
     
     def tick(self):
-      prior = self.server_state['history'][0][-16:]
+      # prior = self.server_state['history'][0][-16:]
+      prior = self.server_state['history'][0]
       buffer_length = self.server_state['buffer_length']
-      return self.generate(prior, length=buffer_length)
+      seq = self.generate(prior, length=buffer_length)
+      
+      # Update clock (next request)
+      total_time = sum([e.value for e in map(Event.from_int, seq) if e.type == 'time_shift'])
+      self.server_state['tick_interval'] = total_time / 1000
+
+      return seq
+
+    def decode(self, token):
+      return Event.from_int(token)
 
 
 if __name__ == '__main__':
