@@ -30,6 +30,7 @@ state = {
     'scclient': None,
     'debug_output': True,
 }
+NOTE_OFFSET=60
 
 # Clock implements the main loop
 class Clock(Thread):
@@ -49,7 +50,7 @@ class Clock(Thread):
         print("No event / history is empty")
         return
       if (e.type == 'note_on'):
-        # play(e.value)
+        play(int(e.value))
         print('playing {}'.format(e.value))
       if (e.type == 'time_shift'):
         state['until_next_event'] = e.value / 1000
@@ -58,7 +59,7 @@ class Clock(Thread):
 
     def run(self):
       model = state['model']
-      trigger = 0
+      trigger = 0.75
 
       while not self.stopped.wait(state['until_next_event']):
         if (state['is_running'] == True):
@@ -66,7 +67,7 @@ class Clock(Thread):
           self.playhead = self.playhead + 1
 
           if (self.playhead / len(state['history'][0]) > trigger):  
-
+            print("Generating more tokens ({} /{} > {})".format(self.playhead, len(state['history'][0]), trigger))
             seq = model.tick()[-128:]
             self.playhead = self.playhead - state['buffer_length'] + (len(seq) - len(state['history'][0]))
             state['history'][0] = seq
@@ -126,7 +127,7 @@ def prepare_model(unused_addr, args):
     print(event)
 
 def play(note):
-    state['scclient'].send_message('/play2', ['s', 'superpiano', 'note', note])
+    state['scclient'].send_message('/play2', ['s', 'superpiano', 'note', note - NOTE_OFFSET])
 
 def shutdown(unused_addr):
     stop_timer()
