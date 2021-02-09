@@ -8,6 +8,7 @@ import miditoolkit
 import pickle
 import time
 import argparse
+import asyncio
 import math
 import pprint
 
@@ -20,15 +21,17 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # TODO: Move to engine.py
 state = {
     'is_running': False,
-    'history': [],
+    'is_generating': False,
+    'history': [[]],
     'temperature': 1.2,
     'until_next_event': 0.25,
-    'buffer_length': 8,
+    'buffer_length': 16,
+    'trigger_generate': 0.5,
     'playback': True,
     'model_name': None,
     'model': None,
     'scclient': None,
-    'debug_output': True,
+    'debug_output': False,
 }
 NOTE_OFFSET=60
 
@@ -38,11 +41,27 @@ class Clock(Thread):
       Thread.__init__(self)
       self.stopped = event
       self.playhead = 0
+      self.wait_for_more = False
 
-    #def should_generate():
+    
+    def generate(self):
+      # state['is_generating'] = True
+      seq = state['model'].tick()[-128:]
+      self.playhead = self.playhead - state['buffer_length'] + (len(seq) - len(state['history'][0]))
+      state['history'][0] = seq
+      # state['is_generating'] = False
+      self.wait_for_more = False
+
+    def generate_in_background(self):
+      Thread(target=self.generate).start()
 
     def get_next(self):
-      return state['model'].decode(state['history'][0][self.playhead])
+      if (np.any(state['history']) and np.any(state['history'][0])):
+        if (self.playhead >= len(state['history'][0])):
+          self.wait_for_more = True
+          return None
+        return state['model'].decode(state['history'][0][self.playhead])
+      return None
 
     def play_next(self):
       e = self.get_next()
@@ -51,26 +70,27 @@ class Clock(Thread):
         return
       if (e.type == 'note_on'):
         play(int(e.value))
-        print('playing {}'.format(e.value))
+        # print('playing {}'.format(e.value))
       if (e.type == 'time_shift'):
-        state['until_next_event'] = e.value / 1000
-        print('waiting {}'.format(e.value / 1000))
+        state['until_next_event'] = e.value / 10
+        # print('waiting {}'.format(e.value / 1000))
+      self.playhead = self.playhead + 1
 
 
     def run(self):
       model = state['model']
-      trigger = 0.75
 
+      self.generate_in_background()
       while not self.stopped.wait(state['until_next_event']):
-        if (state['is_running'] == True):
+        if (state['is_running'] == True and self.wait_for_more == False):  
+        # if (state['is_running'] == True):  
+          
           self.play_next()
-          self.playhead = self.playhead + 1
 
-          if (self.playhead / len(state['history'][0]) > trigger):  
-            print("Generating more tokens ({} /{} > {})".format(self.playhead, len(state['history'][0]), trigger))
-            seq = model.tick()[-128:]
-            self.playhead = self.playhead - state['buffer_length'] + (len(seq) - len(state['history'][0]))
-            state['history'][0] = seq
+          if (self.playhead / len(state['history'][0]) > state['trigger_generate']):  
+            if (state['debug_output']):
+              print("Generating more tokens ({} /{} > {})".format(self.playhead, len(state['history'][0]), state['trigger_generate']))            
+            self.generate_in_background()
 
             if (state['debug_output']):
               print('history: {}'.format([model.decode(h) for h in state['history'][0]]))
