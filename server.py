@@ -16,13 +16,13 @@ from pythonosc import dispatcher, osc_server, udp_client
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-1
+
 # TODO: Move to engine.py
 state = {
     'is_running': False,
     'history': [],
     'temperature': 1.2,
-    'tick_interval': 0.25,
+    'until_next_event': 0.25,
     'buffer_length': 8,
     'playback': True,
     'model_name': None,
@@ -36,16 +36,43 @@ class Clock(Thread):
     def __init__(self, event):
       Thread.__init__(self)
       self.stopped = event
+      self.playhead = 0
+
+    #def should_generate():
+
+    def get_next(self):
+      return state['model'].decode(state['history'][0][self.playhead])
+
+    def play_next(self):
+      e = self.get_next()
+      if (e == None):
+        print("No event / history is empty")
+        return
+      if (e.type == 'note_on'):
+        # play(e.value)
+        print('playing {}'.format(e.value))
+      if (e.type == 'time_shift'):
+        state['until_next_event'] = e.value / 1000
+        print('waiting {}'.format(e.value / 1000))
+
 
     def run(self):
       model = state['model']
-      while not self.stopped.wait(state['tick_interval']):
-        if (state['is_running'] == True):
-          # seq = model.tick()
-          state['history'][0] = model.tick()[-128:]
+      trigger = 0
 
-          if (state['debug_output']):
-            print('history: {}'.format([model.decode(h) for h in state['history'][0]]))
+      while not self.stopped.wait(state['until_next_event']):
+        if (state['is_running'] == True):
+          self.play_next()
+          self.playhead = self.playhead + 1
+
+          if (self.playhead / len(state['history'][0]) > trigger):  
+
+            seq = model.tick()[-128:]
+            self.playhead = self.playhead - state['buffer_length'] + (len(seq) - len(state['history'][0]))
+            state['history'][0] = seq
+
+            if (state['debug_output']):
+              print('history: {}'.format([model.decode(h) for h in state['history'][0]]))
 
 
 def start_timer():
@@ -101,11 +128,20 @@ def prepare_model(unused_addr, args):
 def play(note):
     state['scclient'].send_message('/play2', ['s', 'superpiano', 'note', note])
 
+def shutdown(unused_addr):
+    stop_timer()
+    #state['server'].server_close()
+    state['server'].shutdown()
+    unused_addr
+
 def bind_dispatcher(dispatcher, model):
     state['model'] = model
     dispatcher.map("/start", engine_set, 'is_running', True)
     dispatcher.map("/pause", engine_set, 'is_running', False)
     dispatcher.map("/reset", lambda _: state['history'].clear())
+    dispatcher.map("/end", shutdown)
+    dispatcher.map("/quit", shutdown)
+    dispatcher.map("/exit", shutdown)
     dispatcher.map("/debug", engine_print)
     dispatcher.map("/event", push_event)  # event2word
 
@@ -173,9 +209,9 @@ if __name__ == "__main__":
     bind_dispatcher(dispatcher, model)
 
     # Start Server
-    server = osc_server.ThreadingOSCUDPServer((args.ip, args.port), dispatcher)
-    print("Serving {} on {}".format(state['model_name'], server.server_address))
+    state['server'] = osc_server.ThreadingOSCUDPServer((args.ip, args.port), dispatcher)
+    print("Serving {} on {}".format(state['model_name'], state['server'].server_address))
     start_timer()
-    server.serve_forever()
+    state['server'].serve_forever()
     stop_timer()
     model.close()
