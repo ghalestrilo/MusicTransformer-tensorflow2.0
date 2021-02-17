@@ -22,10 +22,10 @@ class MusicTransformer(keras.Model):
         self.embedding_dim = embedding_dim
         self.vocab_size = vocab_size
         self.dist = dist
-
+#
         if loader_path is not None:
             self.load_config_file(loader_path)
-
+#
         self.Encoder = Encoder(
             d_model=self.embedding_dim, input_vocab_size=self.vocab_size,
             num_layers=self.num_layer, rate=dropout, max_len=max_seq)
@@ -33,9 +33,9 @@ class MusicTransformer(keras.Model):
             num_layers=self.num_layer, d_model=self.embedding_dim,
             input_vocab_size=self.vocab_size, rate=dropout, max_len=max_seq)
         self.fc = keras.layers.Dense(self.vocab_size, activation=None, name='output')
-
+#
         self._set_metrics()
-
+#
         if loader_path is not None:
             self.load_ckpt_file(loader_path)
 
@@ -526,8 +526,8 @@ class MusicTransformerDecoder(keras.Model):
       seq = self.generate(prior, length=buffer_length)
       
       # Update clock (next request)
-      total_time = sum([e.value for e in map(Event.from_int, seq) if e.type == 'time_shift'])
-      self.server_state['tick_interval'] = total_time / 1000
+      # total_time = sum([e.value for e in map(Event.from_int, seq) if e.type == 'time_shift'])
+      # self.server_state['tick_interval'] = total_time / 1000
 
       return seq
 
