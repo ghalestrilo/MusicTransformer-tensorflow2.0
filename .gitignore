@@ -13,3 +13,7 @@ result/
 model/
 logs/
 .dfc/
+
+checkpoints/
+processed/
+midi_processor/
